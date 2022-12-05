@@ -42,9 +42,14 @@ const subscriptionStatusSchema = Joi.object({
   subscription: Joi.string().valid("starter", "pro", "business").required(),
 });
 
+const userRepeatVerificationSchema = Joi.object({
+  email: Joi.string().email({ minDomainSegments: 2 }).required(),
+});
+
 module.exports = {
   requestBodySchema,
   contactStatusSchema,
   userAuthSchema,
   subscriptionStatusSchema,
+  userRepeatVerificationSchema,
 };
