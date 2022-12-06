@@ -7,8 +7,10 @@ const {
   createConflictError,
   createAuthError,
   createCustomError,
+  createNotFoundHttpError,
 } = require("../helpers/errorHelpers");
 const { avatarResize } = require("../helpers/avatarResize");
+const { sendVerificationMail } = require("../helpers/mailSender");
 
 const { SECRET_KEY, SERVER_HOST, UPLOAD_DIR_AVATARS } = require("../config");
 
@@ -18,9 +20,63 @@ const signup = async (req, res, next) => {
     return next(createConflictError());
   }
 
-  const { email, subscription } = await User.create(req.body);
+  const { email, subscription, verificationToken } = await User.create(
+    req.body
+  );
+
+  sendVerificationMail({ email, verificationToken });
   return res.status(201).json({
     user: { email, subscription },
+  });
+};
+
+const verify = async (req, res, next) => {
+  const { verificationToken } = req.params;
+  const user = await User.findOne({ verificationToken });
+
+  if (!user) {
+    return next(createCustomError(404, "User not found"));
+  }
+
+  const verifiedUser = await User.findByIdAndUpdate(
+    user._id,
+    { verificationToken: null, verify: true },
+    { new: true }
+  );
+
+  if (!verifiedUser) {
+    return next(
+      createCustomError(
+        500,
+        `Something wrong! Can't update user with ID ${user._id}`
+      )
+    );
+  }
+
+  return res.status(200).json({
+    message: "Verification successful!",
+  });
+};
+
+const repeatVerify = async (req, res, next) => {
+  const { email } = req.body;
+  const user = await User.findOne({ email });
+
+  if (!user) {
+    return next(createNotFoundHttpError());
+  }
+
+  if (user.verify) {
+    return next(createCustomError(400, "Verification has already been passed"));
+  }
+
+  sendVerificationMail({
+    email,
+    verificationToken: user.verificationToken,
+    isRepeat: true,
+  });
+  return res.status(200).json({
+    message: "Verification email sent",
   });
 };
 
@@ -29,6 +85,10 @@ const login = async (req, res, next) => {
 
   if (!user || !user.comparePassword(req.body.password)) {
     return next(createAuthError("Email or password is wrong"));
+  }
+
+  if (!user.verify) {
+    return next(createAuthError("User not verified"));
   }
 
   const { _id, email, subscription } = user;
@@ -123,6 +183,8 @@ module.exports = {
   login,
   logout,
   signup,
+  verify,
+  repeatVerify,
   getCurrent,
   subscriptionStatusUpdate,
   avatarUpdate,
